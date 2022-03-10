@@ -95,7 +95,7 @@ If you handle this click event, report to Personyze about it by calling [Persony
 func reportExecuted()
 ```
 
-If you present this action in a custom way (not through `action.renderOnWebkitView()`), call this function after the action is shown to the user, so action statistics will be updated.
+If you present this action in a custom way (not through `action.renderOnWebkitView()`), call this function after the action is shown to the user, so action status will be changed to “executed” in Personyze dashboard, and execution statistics will be counted.
 
 ### action.reportClick()
 
