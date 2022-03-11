@@ -4,6 +4,13 @@ This library allows you to use [Personyze system](https://www.personyze.com/) on
 
 See [reference manual](./doc/README.md).
 
+See also:
+
+- [Personyze Android SDK](https://github.com/personyze/personyzeandroidsdk)
+- [Personyze Android SDK Demo app](https://github.com/personyze/personyzeandroidsdk-demo)
+- Personyze iOS SDK
+- [Personyze iOS SDK Demo app](https://github.com/personyze/personyze-ios-sdk-demo)
+
 ## How to get started with the Personyze iOS SDK
 
 This is as simple as to download the SDK archive from [here](https://github.com/personyze/personyze-ios-sdk/archive/refs/heads/main.zip). Extract it. Then create a new xcode project, or open an existing one, and drag the PersonyzeIosSdk.swift file from Finder to the “Project Navigator” panel on the left of the xcode screen, where other project files are.
