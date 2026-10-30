@@ -1,35 +1,82 @@
-# personyze-ios-sdk
+# Personyze iOS SDK 2.0
 
-This library allows you to use [Personyze system](https://www.personyze.com/) on iOS devices.
+**Work in progress.** A rewrite of the 1.x SDK (a single `PersonyzeIosSdk.swift` dragged into an Xcode project) as
+a Swift package, following the Android SDK 2.0 decision for decision: the same wire, the same session rules, the
+same failure handling. 1.x stays available on this repository's `v1` branch.
 
-See [reference manual](./doc/README.md).
+The API is in place; the iOS layer is not yet - rendering actions in a web view, showing notifications, the
+device's screen and type, the background send, the upgrade from 1.x. Until it is, decisions and events work, and
+an app renders actions itself.
 
-See also:
+## Use
 
-- [Personyze Android SDK](https://github.com/personyze/personyzeandroidsdk)
-- [Personyze Android SDK Demo app](https://github.com/personyze/personyzeandroidsdk-demo)
-- Personyze iOS SDK
-- [Personyze iOS SDK Demo app](https://github.com/personyze/personyze-ios-sdk-demo)
-
-## How to get started with the Personyze iOS SDK
-
-This is as simple as to download the SDK archive from [here](https://github.com/personyze/personyze-ios-sdk/archive/refs/heads/main.zip). Extract it. Then create a new xcode project, or open an existing one, and drag the PersonyzeIosSdk.swift file from Finder to the “Project Navigator” panel on the left of the xcode screen, where other project files are.
-
-The SDK is ready. To feel like it works add the following swift code to viewDidLoad() of your ViewController, or somewhere else:
+Initialize once, where the app starts:
 
 ```swift
-do
-{   let tracker = try PersonyzeTracker(apiKey: "0011223344556677889900112233445566778899")
-    tracker.navigate(documentName: "ViewController")
-    tracker.done()
-}
-catch
-{   print(error)
+import Personyze
+
+@main
+struct ShopApp: App
+{	init()
+	{	Personyze.initialize(PersonyzeConfig(apiKey: "YOUR_API_KEY"))
+	}
+	...
 }
 ```
 
-Use your API key instead of “0011223344556677889900112233445566778899”. API keys for your account can be found on Personyze in the [“Settings” → “Integrations” page](https://personyze.com/site/tracker/condition#cat=Account%20settings%2FMain%20settings%2FIntegrations). You need the full-featured key.
+On each screen, log the page view and get what to show there, in one round trip. Events in the closure go in the
+same request, attributed to the screen; the closure runs on the caller's actor, so it may read the view's state:
 
-The code above logs a navigation to page called “ViewController”.
+```swift
+let result = await Personyze.navigate("Product") { $0.productViewed(product.id) }
+if result.has(88)
+{	showVariantB()
+}
+```
 
-You can look up this request on Personyze [Live Visits Dashboard](https://personyze.com/site/tracker/condition#cat=Dashboard%2FReal%20time%20visitors). In filters, select “Pages” → “only containing” → “ViewController”.
+Everything else the visitor does is one call that queues a command and returns at once, from any thread:
+
+```swift
+Personyze.productAddedToCart("A1000", quantity: 2)
+Personyze.setUserId(user.email)	// after login; nil logs out
+```
+
+Nothing throws for a network or server problem. A failed decision answers an empty result with `error` set, so
+the app renders its default; every failure the SDK absorbs reaches `PersonyzeConfig.onError`. The current decision
+and visitor are also streams, for a view that follows them: `for await result in Personyze.results { ... }`.
+
+## What is where
+
+| | |
+| --- | --- |
+| `Personyze.swift`, `PersonyzeClient.swift`, `PersonyzeEvents.swift`, `PersonyzeConfig.swift` | The API |
+| `PersonyzeResult.swift`, `PersonyzeNotification.swift`, `PersonyzeClick.swift` | What a decision, an action, a notification, an A/B verdict and a tap look like to the app |
+| `Core/Engine.swift` | The state machine: the queue, one tracker request at a time, what is kept or dropped when a request fails, templates, notifications, the 1.x upgrade |
+| `Core/EngineState.swift` | `state.json`, `outbox.json`, `metadata.json` - read by newer versions too |
+| `Core/Session.swift` | The session string, the 90-minute expiry, the visitor id the server makes of `user_id` |
+| `Core/Wire.swift` | The tracker request and response, field for field as the guide documents them |
+| `Core/Commands.swift`, `Core/Endpoints.swift` | Commands and `/rest` paths, refusing what the server would refuse |
+| `Core/Transport.swift`, `Core/RestClient.swift` | URLSession under one deadline per call, at most one retry, whether a failed request may have been sent |
+| `Core/Store.swift` | Atomic files for state and the event queue |
+| `System/ClientEnvironment.swift` | What a client is built from: the device, the disk, the network, notifications |
+
+`Tests/PersonyzeTests/EngineTests.swift` is the Android SDK's `EngineTest`, test for test.
+
+## Requirements
+
+iOS 15 or later. Xcode 26 or later (Swift 6.2) - what the App Store requires of every upload since April 2026.
+
+## Develop
+
+The engine (`Sources/Personyze/Core`) imports nothing but Foundation, so it builds and tests on Linux as well as
+on a Mac. The iOS layer will be compiled only where UIKit exists.
+
+```bash
+swift build
+swift test
+```
+
+On Linux, install Swift with [swiftly](https://www.swift.org/install/linux/). No Xcode, no Mac.
+
+CI (`.github/workflows/ci.yml`) runs the tests on Linux and on macOS, builds the package for iOS, and runs the
+tests on an iOS Simulator.

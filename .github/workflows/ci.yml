@@ -1,0 +1,40 @@
+# Runs in the public SDK repository, where this directory is the root. macOS minutes are free there.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    name: Engine on Linux, Swift ${{ matrix.swift }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Swift the package supports (Xcode 26), and the newest.
+        swift: ["6.2", "latest"]
+    container: swift:${{ matrix.swift }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - run: swift test
+
+  apple:
+    name: macOS and iOS Simulator
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -version
+      - name: Engine tests on macOS
+        run: swift test
+      - name: Build for iOS (compiles the UIKit/WebKit layer Linux skips)
+        run: xcodebuild build -scheme Personyze -destination 'generic/platform=iOS Simulator' -quiet
+      - name: Tests on an iOS Simulator
+        run: |
+          udid=$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          print(next(d["udid"] for runtime, list in devices.items() if "iOS" in runtime for d in list if d["name"].startswith("iPhone")))
+          ')
+          xcodebuild test -scheme Personyze -destination "id=$udid" -quiet
