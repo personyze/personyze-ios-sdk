@@ -43,6 +43,13 @@ public enum Personyze
 	{	if let problem = config.problem
 		{	preconditionFailure(problem)
 		}
+		#if os(iOS)
+		// Here, as the app starts: iOS takes background task handlers only before launch ends.
+		BackgroundRefresh.registerIfDeclared()
+		onMain
+		{	AppLifecycle.install()
+		}
+		#endif
 		return current.withLock
 		{	client in
 			if let existing = client

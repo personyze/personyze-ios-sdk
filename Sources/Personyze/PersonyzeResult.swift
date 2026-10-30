@@ -287,6 +287,7 @@ protocol ActionReporter: AnyObject, Sendable
 	func reportProductClicked(_ actionId: Int, productId: String)
 	func reportArticleClicked(_ actionId: Int, articleId: String)
 	func reportError(_ actionId: Int, message: String)
+	func report(_ click: PersonyzeClick)
 }
 
 /// A campaign the visitor matches.

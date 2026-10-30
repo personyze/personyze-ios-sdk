@@ -15,7 +15,11 @@ struct ClientEnvironment: Sendable
 
 	/// The environment for this OS.
 	static func current(config: PersonyzeConfig, notifications: Locked<Bool>) -> ClientEnvironment
-	{	system(config: config)
+	{	#if os(iOS)
+		return ios(config: config, notifications: notifications)
+		#else
+		return system(config: config)
+		#endif
 	}
 
 	/// Foundation only: no screen, no notifications, always online.

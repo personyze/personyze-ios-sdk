@@ -268,6 +268,11 @@ public final class PersonyzeClient: Sendable, ActionReporter, CustomStringConver
 		return notification
 	}
 
+	/// Whether the app wants notifications now: the config, then `setNotificationsEnabled`.
+	var notificationsWanted: Bool
+	{	notificationsEnabled.value
+	}
+
 	/// Turn the periodic notification check on or off (also `PersonyzeConfig.notifications`).
 	public func setNotificationsEnabled(_ enabled: Bool)
 	{	notificationsEnabled.value = enabled
