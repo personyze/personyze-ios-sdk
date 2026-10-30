@@ -16,7 +16,7 @@ jobs:
         swift: ["6.2", "latest"]
     container: swift:${{ matrix.swift }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: swift --version
       - run: swift test
 
@@ -24,7 +24,7 @@ jobs:
     name: macOS and iOS Simulator
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: xcodebuild -version
       - name: Engine tests on macOS
         run: swift test
@@ -37,4 +37,19 @@ jobs:
           devices = json.load(sys.stdin)["devices"]
           print(next(d["udid"] for runtime, list in devices.items() if "iOS" in runtime for d in list if d["name"].startswith("iPhone")))
           ')
-          xcodebuild test -scheme Personyze -destination "id=$udid" -quiet
+          # The scheme with the test target: Xcode names it <package>-Package. The library's own scheme
+          # has no tests, and xcodebuild "succeeded" on it having run none.
+          scheme=$(xcodebuild -list -json | python3 -c '
+          import json, sys
+          schemes = json.load(sys.stdin)["workspace"]["schemes"]
+          print("schemes:", schemes, file=sys.stderr)
+          print(next((s for s in schemes if s.endswith("-Package")), "Personyze"))
+          ')
+          xcodebuild test -scheme "$scheme" -destination "id=$udid" -resultBundlePath simulator.xcresult -quiet
+          # Counted from the result bundle: no tests run is a failure.
+          xcrun xcresulttool get test-results summary --path simulator.xcresult --format json | python3 -c '
+          import json, sys
+          s = json.load(sys.stdin)
+          print("iOS Simulator:", s.get("totalTestCount"), "tests,", s.get("passedTests"), "passed,", s.get("failedTests"), "failed")
+          sys.exit(0 if s.get("totalTestCount", 0) > 0 and s.get("failedTests", 0) == 0 else 1)
+          '
