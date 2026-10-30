@@ -37,19 +37,16 @@ jobs:
           devices = json.load(sys.stdin)["devices"]
           print(next(d["udid"] for runtime, list in devices.items() if "iOS" in runtime for d in list if d["name"].startswith("iPhone")))
           ')
-          # The scheme with the test target: Xcode names it <package>-Package. The library's own scheme
-          # has no tests, and xcodebuild "succeeded" on it having run none.
-          scheme=$(xcodebuild -list -json | python3 -c '
-          import json, sys
-          schemes = json.load(sys.stdin)["workspace"]["schemes"]
-          print("schemes:", schemes, file=sys.stderr)
-          print(next((s for s in schemes if s.endswith("-Package")), "Personyze"))
-          ')
-          xcodebuild test -scheme "$scheme" -destination "id=$udid" -resultBundlePath simulator.xcresult -quiet
-          # Counted from the result bundle: no tests run is a failure.
+          status=0
+          xcodebuild test -scheme Personyze -destination "id=$udid" -resultBundlePath simulator.xcresult -quiet || status=$?
+          # The count and the failures from the result bundle: -quiet prints neither (its "Executed 0
+          # tests" is XCTest's count; these are Swift Testing tests), and no test run is a failure.
           xcrun xcresulttool get test-results summary --path simulator.xcresult --format json | python3 -c '
           import json, sys
           s = json.load(sys.stdin)
           print("iOS Simulator:", s.get("totalTestCount"), "tests,", s.get("passedTests"), "passed,", s.get("failedTests"), "failed")
+          for f in s.get("testFailures", []):
+              print("FAILED", f.get("testIdentifierString") or f.get("testName"), "-", f.get("failureText"))
           sys.exit(0 if s.get("totalTestCount", 0) > 0 and s.get("failedTests", 0) == 0 else 1)
           '
+          exit $status
