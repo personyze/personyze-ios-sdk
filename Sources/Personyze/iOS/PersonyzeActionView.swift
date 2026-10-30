@@ -35,7 +35,7 @@ public final class PersonyzeActionView: UIView
 	/// The action shown, or nil.
 	public private(set) var action: PersonyzeAction?
 
-	private var webView: WKWebView?
+	private(set) var webView: WKWebView?
 	private var renderedKey: String?
 	private var executedPending = false
 	private var contentHeight: CGFloat = 0

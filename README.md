@@ -4,9 +4,8 @@
 a Swift package, following the Android SDK 2.0 decision for decision: the same wire, the same session rules, the
 same failure handling. 1.x stays available on this repository's `v1` branch.
 
-The API is in place; the iOS layer is not yet - rendering actions in a web view, showing notifications, the
-device's screen and type, the background send, the upgrade from 1.x. Until it is, decisions and events work, and
-an app renders actions itself.
+Everything is in place and builds and tests on iOS; what is not yet proven is its behaviour in a running app - an
+action rendered on screen, a notification shown, a background send - and the live conformance test.
 
 ## Use
 
@@ -43,7 +42,58 @@ Personyze.setUserId(user.email)	// after login; nil logs out
 
 Nothing throws for a network or server problem. A failed decision answers an empty result with `error` set, so
 the app renders its default; every failure the SDK absorbs reaches `PersonyzeConfig.onError`. The current decision
-and visitor are also streams, for a view that follows them: `for await result in Personyze.results { ... }`.
+and visitor are also streams, for a view that follows them: `for await result in Personyze.results { ... }`, or in
+SwiftUI `@StateObject private var personyze = PersonyzeModel()`.
+
+### Showing an action
+
+An HTML action (a banner, a recommendation widget) renders in a web view that reports it shown, reports taps on
+it, opens its links in the browser and is as tall as its content:
+
+```swift
+if let banner = result.actions(in: "Home banner").first	// the placeholder's name or HTML id in the panel
+{	PersonyzeActionContent(banner)	// SwiftUI; in UIKit, PersonyzeActionView and render(_:)
+}
+```
+
+A JSON action (a product feed) is data for your own views: `action.contentJsonArray()`.
+
+### Sending in the background
+
+Queued events go out as the app leaves the foreground, and when the network returns. For what is left after that,
+and for notifications while the app is closed, iOS runs a background refresh - if the app declares it in
+`Info.plist`:
+
+```xml
+<key>BGTaskSchedulerPermittedIdentifiers</key>
+<array><string>com.personyze.sdk.refresh</string></array>
+<key>UIBackgroundModes</key>
+<array><string>fetch</string></array>
+```
+
+Without it, both happen while the app runs. Call `Personyze.initialize` as the app starts (`App.init`, or
+`application(_:didFinishLaunchingWithOptions:)`): iOS takes the handler only then, and the key is never stored, so a
+launch in the background finds it only there.
+
+### Notifications
+
+`notifications = true` in the config shows what a "Web Push Send" campaign queues for the visitor, as a local
+notification. The app asks the user's permission itself (`UNUserNotificationCenter.requestAuthorization`), and
+passes taps on to the SDK from its notification delegate, which stays the app's:
+
+```swift
+func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async
+{	if Personyze.handleNotificationResponse(response)
+	{	return
+	}
+	// the app's own notifications
+}
+```
+
+### Upgrading from 1.x
+
+The first launch after the upgrade reads 1.x's state from `UserDefaults` and deletes it: the visitor, their
+session, their recent sessions and the actions they closed. Nothing to do in the app.
 
 ## What is where
 
@@ -59,6 +109,11 @@ and visitor are also streams, for a view that follows them: `for await result in
 | `Core/Transport.swift`, `Core/RestClient.swift` | URLSession under one deadline per call, at most one retry, whether a failed request may have been sent |
 | `Core/Store.swift` | Atomic files for state and the event queue |
 | `System/ClientEnvironment.swift` | What a client is built from: the device, the disk, the network, notifications |
+| `iOS/IOSEnvironment.swift` | The device from UIKit, the network, the background send and refresh, the app's foreground and background |
+| `iOS/PersonyzeActionView.swift` | The web view an action renders in, and `PersonyzeActionContent` for SwiftUI |
+| `iOS/UserNotificationPresenter.swift` | Notifications, and `Personyze.handleNotificationResponse` |
+| `Apple/PersonyzeModel.swift` | The decision and the visitor as an `ObservableObject` |
+| `Core/LegacyDefaults.swift` | 1.x's state in `UserDefaults`, read once on upgrade |
 
 `Tests/PersonyzeTests/EngineTests.swift` is the Android SDK's `EngineTest`, test for test.
 
@@ -69,7 +124,7 @@ iOS 15 or later. Xcode 26 or later (Swift 6.2) - what the App Store requires of 
 ## Develop
 
 The engine (`Sources/Personyze/Core`) imports nothing but Foundation, so it builds and tests on Linux as well as
-on a Mac. The iOS layer will be compiled only where UIKit exists.
+on a Mac. The iOS layer (`Sources/Personyze/iOS`) is compiled only for iOS; CI builds and tests it on a simulator.
 
 ```bash
 swift build
