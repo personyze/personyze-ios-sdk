@@ -8,11 +8,12 @@ let testAssets = "https://counter.personyze.com/"
 /// A fixed moment (2025-10-23 12:00 UTC), in ms.
 let t0: Int64 = 1_761_220_800_000
 
-/// A platform whose wall clock a test can move. Time otherwise passes for real: the Android tests
-/// ran on a virtual clock, Swift has none, so the budgets here are short instead.
+/// A platform whose wall clock stands still until a test moves it, as the Android tests' virtual
+/// clock did - a session opened late in a slow first test still starts at `t0` (an iOS Simulator
+/// starting cold took over a second, and `past_sessions` read one second on). The monotonic clock
+/// is real: Swift has no virtual one, so the budgets here are short instead.
 final class FakePlatform: Platform, @unchecked Sendable
 {	private let lock = NSLock()
-	private let started = Clocks.monotonicMs()
 	private var wall = t0
 	private var isOnlineNow = true
 	private var showableNow = false
@@ -36,7 +37,7 @@ final class FakePlatform: Platform, @unchecked Sendable
 	func nowMs() -> Int64
 	{	lock.locked
 		{	wall
-		} + monotonicMs() - started
+		}
 	}
 
 	func monotonicMs() -> Int64
