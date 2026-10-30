@@ -51,6 +51,8 @@ final class Engine: @unchecked Sendable
 	static let metadataChunk = 200
 	static let notificationIntervalMs: Int64 = 15*60_000
 	static let deliveredKept = 20
+	/// Notification reports not sent yet, kept until they are; the oldest go first past this.
+	static let reportsKept = 10
 	static let clockSkewMs: Int64 = 60_000
 	static let maxSafeInteger: Int64 = 9_007_199_254_740_991
 
@@ -70,6 +72,8 @@ final class Engine: @unchecked Sendable
 	private let signalLock = NSLock()
 	private let wire = AsyncMutex()
 	private let meta = AsyncMutex()
+	/// One pass over the notification reports at a time, so none goes twice.
+	private let reportWire = AsyncMutex()
 	private let loaded = Latch()
 	private let tasks = TaskSet()
 	/// Saves, off the caller's thread, in order.
@@ -1084,6 +1088,65 @@ final class Engine: @unchecked Sendable
 		}
 		persistNow()
 		return show ? notification : nil
+	}
+
+	/// Report a notification shown, or tapped (SPEC section 11): fetch the address `GET
+	/// current_notification` answered with it. Written down first and taken off once the server has
+	/// had it, so a report the network or the process lost goes with the next notification check
+	/// (`sendNotificationReports`). An empty address, or one that is not https, is nothing to report.
+	func reportNotification(_ address: String) async
+	{	guard Engine.reportUrl(address) != nil else
+		{	return
+		}
+		await loaded.wait()
+		lock.locked
+		{	var reports = state.notifications.reports.filter { $0 != address }
+			reports.append(address)
+			state.notifications.reports = Array(reports.suffix(Engine.reportsKept))
+		}
+		persistNow()
+		await sendNotificationReports()
+	}
+
+	/// Send the notification reports not sent yet, oldest first, within the background budget.
+	/// Stops at the first that does not reach the server; the rest wait for the next check.
+	func sendNotificationReports() async
+	{	await loaded.wait()
+		await reportWire.withLock
+		{	let addresses = lock.locked
+			{	state.notifications.reports
+			}
+			if addresses.isEmpty
+			{	return
+			}
+			let deadline = platform.monotonicMs() + config.backgroundTimeoutMs
+			var sent: Set<String> = []
+			for address in addresses
+			{	let remaining = deadline - platform.monotonicMs()
+				if remaining <= 0
+				{	break
+				}
+				if let url = Engine.reportUrl(address), !(await rest.ping(url, budgetMs: remaining))
+				{	platform.log("Personyze: could not report the notification; trying again at the next check")
+					break
+				}
+				sent.insert(address)
+			}
+			if !sent.isEmpty
+			{	lock.locked
+				{	state.notifications.reports.removeAll { sent.contains($0) }
+				}
+				persistNow()
+			}
+		}
+	}
+
+	/// A report's address as the server gave it, when it is one to fetch: https only.
+	static func reportUrl(_ address: String) -> URL?
+	{	guard !address.isEmpty, let url = URL(string: address), url.scheme?.lowercased() == "https", url.host != nil else
+		{	return nil
+		}
+		return url
 	}
 
 	/// Tell the server the message was delivered, so it leaves the queue. Best effort.

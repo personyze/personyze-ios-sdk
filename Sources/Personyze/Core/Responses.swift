@@ -2,7 +2,8 @@ import Foundation
 
 /// `GET current_notification` answers `null` or one queued message (app-service
 /// `mod_rest/handlers/current_notification.ts`), put there by a "Web Push Send" action for a visitor
-/// whose requests said `noti_enabled`.
+/// whose requests said `noti_enabled`. With it, since 2026-10-31, the two addresses the SDK reports
+/// it with - shown, and tapped; a server or a send from before them answers neither.
 enum NotificationPoll
 {	static func parse(_ text: String) -> PersonyzeNotification?
 	{	let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -36,7 +37,9 @@ enum NotificationPoll
 			buttons: Array(buttons.prefix(3)),
 			silent: Wire.bool(obj["silent"]),
 			renotify: Wire.bool(obj["renotify"]),
-			vibrate: Wire.text(obj["vibrate"]).split(separator: ",").compactMap { Int64($0.trimmingCharacters(in: .whitespaces)) }.filter { $0 >= 0 }
+			vibrate: Wire.text(obj["vibrate"]).split(separator: ",").compactMap { Int64($0.trimmingCharacters(in: .whitespaces)) }.filter { $0 >= 0 },
+			shownUrl: trimmedText(obj["shown_url"]),
+			clickUrl: trimmedText(obj["click_url"])
 		)
 	}
 

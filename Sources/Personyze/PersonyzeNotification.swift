@@ -17,6 +17,11 @@ public struct PersonyzeNotification: Sendable, Equatable
 	/// The vibration pattern the campaign set, in milliseconds. iOS plays no custom patterns; it is
 	/// here for a UI of your own.
 	public let vibrate: [Int64]
+	/// Where the SDK reports the notification shown (the server's `shown_url`), or empty: nothing to
+	/// report with.
+	let shownUrl: String
+	/// Where the SDK reports a tap on it or one of its buttons (`click_url`), or empty.
+	let clickUrl: String
 
 	public struct Button: Sendable, Equatable
 	{	public let title: String

@@ -90,6 +90,10 @@ func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive respo
 }
 ```
 
+The campaign's statistics count each notification shown and each tap on it or its buttons - the tap through
+`handleNotificationResponse` - as they count a website's push. A report that cannot go at once (no network)
+goes with the next notification check.
+
 ### Upgrading from 1.x
 
 The first launch after the upgrade reads 1.x's state from `UserDefaults` and deletes it: the visitor, their

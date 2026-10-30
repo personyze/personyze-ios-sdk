@@ -146,6 +146,24 @@ struct ClientTests
 		#expect(h.transport.requests.last?.method == "DELETE")
 	}
 
+	/// Posted, it is reported shown; the tap's address goes with it, for the tap to report.
+	@Test func notificationIsReportedShown() async throws
+	{	let presenter = FakePresenter(allowed: true)
+		let h = ClientHarness(presenter: presenter)
+		{	transport, _ in
+			transport.on("/rest/current_notification/") { request in
+				request.method == "DELETE" ? .answered(status: 200, body: "1", dateMs: nil) : .answered(status: 200, body: #"{"message_id":5,"title":"T","body":"B","shown_url":"https://pic.test/white/k=d57hr0hy9dp2/u=7","click_url":"https://pic.test/white/k=d57hr0hy9dp2/u=7/extra=1"}"#, dateMs: nil)
+			}
+			transport.on("/white/", ok(""))
+		}
+		_ = await h.client.navigate("Home")
+		let n = try #require(await h.client.checkNotifications())
+		#expect(n.clickUrl == "https://pic.test/white/k=d57hr0hy9dp2/u=7/extra=1")
+		let reports = h.transport.requests.filter { $0.url.absoluteString.contains("/white/") }.map { $0.url.absoluteString }
+		#expect(reports == ["https://pic.test/white/k=d57hr0hy9dp2/u=7"])
+		#expect(h.transport.requests.contains { $0.method == "DELETE" })
+	}
+
 	@Test func notificationsTheUserRefusedAreNotFetched() async
 	{	let h = ClientHarness(presenter: FakePresenter(allowed: false))
 		_ = await h.client.navigate("Home")

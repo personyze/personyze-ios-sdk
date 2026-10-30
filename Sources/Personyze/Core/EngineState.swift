@@ -108,6 +108,8 @@ struct PersistedNotifications: Codable, Sendable, Equatable
 	/// After a 1.x upgrade the queued message was probably shown already: take the first one seen as
 	/// delivered, silently.
 	var primeOnNextPoll = false
+	/// Report addresses (shown, tapped) not sent yet, oldest first.
+	var reports: [String] = []
 
 	struct Delivered: Codable, Sendable, Equatable
 	{	var visitor: String
@@ -124,6 +126,7 @@ struct PersistedNotifications: Codable, Sendable, Equatable
 		lastCheckMs = try c.decodeIfPresent(Int64.self, forKey: .lastCheckMs) ?? 0
 		delivered = try c.decodeIfPresent([Delivered].self, forKey: .delivered) ?? []
 		primeOnNextPoll = try c.decodeIfPresent(Bool.self, forKey: .primeOnNextPoll) ?? false
+		reports = try c.decodeIfPresent([String].self, forKey: .reports) ?? []
 	}
 }
 

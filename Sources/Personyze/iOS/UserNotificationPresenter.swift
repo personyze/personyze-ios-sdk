@@ -40,6 +40,7 @@ struct UserNotificationPresenter: NotificationPresenter
 				"url": notification.url,
 				"buttons": notification.buttons.map { $0.url },
 				"message_id": NSNumber(value: notification.messageId),
+				"click_url": notification.clickUrl,
 			] as [String: Any],
 		]
 		if let attachment = await UserNotificationPresenter.attachment(notification.imageUrl.isEmpty ? notification.iconUrl : notification.imageUrl)
@@ -119,6 +120,9 @@ extension Personyze
 	/// }
 	/// ```
 	///
+	/// It also reports the tap to Personyze, so the campaign counts it as a click, as a website's
+	/// push is counted.
+	///
 	/// A notification arriving while the app is in front appears only if the delegate's
 	/// `userNotificationCenter(_:willPresent:)` says so.
 	@discardableResult
@@ -126,8 +130,14 @@ extension Personyze
 	{	guard let info = response.notification.request.content.userInfo[UserNotificationPresenter.userInfoKey] as? [String: Any] else
 		{	return false
 		}
-		var address = info["url"] as? String ?? ""
 		let action = response.actionIdentifier
+		if action == UNNotificationDismissActionIdentifier
+		{	return true
+		}
+		if let report = info["click_url"] as? String, !report.isEmpty
+		{	reportTap(report)
+		}
+		var address = info["url"] as? String ?? ""
 		if action.hasPrefix(UserNotificationPresenter.buttonPrefix), let i = Int(action.dropFirst(UserNotificationPresenter.buttonPrefix.count)), let buttons = info["buttons"] as? [String], buttons.indices.contains(i)
 		{	address = buttons[i]
 		}
@@ -137,6 +147,24 @@ extension Personyze
 			}
 		}
 		return true
+	}
+
+	/// The tap's report, sent while iOS lets the app run - opening the address may take it out of
+	/// the foreground - and kept for the next check if it cannot go now. Not before `initialize`:
+	/// the app has not said yet that anything may be sent.
+	private static func reportTap(_ address: String)
+	{	guard let client = Personyze.client else
+		{	Log.write("Personyze: a notification was tapped before Personyze.initialize(); the tap is not reported")
+			return
+		}
+		onMain
+		{	let handle = BackgroundTaskHandle()
+			handle.begin()
+			Task { @MainActor in
+				await client.engine.reportNotification(address)
+				handle.end()
+			}
+		}
 	}
 }
 #endif

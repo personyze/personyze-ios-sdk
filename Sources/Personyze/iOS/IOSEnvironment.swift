@@ -358,7 +358,7 @@ enum AppLifecycle
 /// `UIApplication.beginBackgroundTask`: a few seconds more to run after the app leaves the
 /// foreground, ended when the work is done or the time is up.
 @MainActor
-private final class BackgroundTaskHandle
+final class BackgroundTaskHandle
 {	private var id = UIBackgroundTaskIdentifier.invalid
 
 	func begin()

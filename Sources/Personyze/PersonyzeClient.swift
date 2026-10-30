@@ -258,12 +258,17 @@ public final class PersonyzeClient: Sendable, ActionReporter, CustomStringConver
 	{	await checkNotifications(force: true)
 	}
 
+	/// Reports kept from before go first: a tap made offline, a report the process did not live to
+	/// send. A notification posted is reported shown, and taken off the server's queue.
 	func checkNotifications(force: Bool) async -> PersonyzeNotification?
-	{	guard await presenter.canShow(), let notification = await engine.pollNotification(force: force) else
+	{	await engine.sendNotificationReports()
+		guard await presenter.canShow(), let notification = await engine.pollNotification(force: force) else
 		{	return nil
 		}
 		if await presenter.show(notification)
-		{	await engine.ackNotification(notification.messageId)
+		{	async let ack: Void = engine.ackNotification(notification.messageId)
+			await engine.reportNotification(notification.shownUrl)
+			await ack
 		}
 		return notification
 	}

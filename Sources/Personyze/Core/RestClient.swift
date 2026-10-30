@@ -22,6 +22,7 @@ final class RestClient: Sendable
 	private let retries: Int
 	private let monotonicMs: @Sendable () -> Int64
 	private let headers: [String: String]
+	private let pingHeaders: [String: String]
 
 	init
 	(	transport: any Transport,
@@ -42,6 +43,32 @@ final class RestClient: Sendable
 			"Accept": "application/json",
 			"User-Agent": userAgent,
 		]
+		self.pingHeaders = ["User-Agent": userAgent]
+	}
+
+	/// A GET of an address the server handed out - a notification's report, on the media host (SPEC
+	/// section 11) - without the API key, which goes to `/rest` only. Answers whether the server had
+	/// it: an answer below 500, whatever it says. Retried as `call` is: once, for a connection
+	/// failure, a timeout or a 5xx, while a tenth of the budget is left.
+	func ping(_ url: URL, budgetMs: Int64) async -> Bool
+	{	let deadline = monotonicMs() + budgetMs
+		for attempt in 0 ... retries
+		{	let remaining = deadline - monotonicMs()
+			if remaining <= 0 || attempt > 0 && remaining < budgetMs/10
+			{	break
+			}
+			switch await transport.execute(HttpRequest(method: "GET", url: url, headers: pingHeaders, body: nil), timeoutMs: remaining)
+			{	case .answered(let status, _, _):
+					if status < 500
+					{	return true
+					}
+				case .failed(_, _, let offline, _):
+					if offline
+					{	return false
+					}
+			}
+		}
+		return false
 	}
 
 	func call(_ method: String, _ path: String, body: String?, budgetMs: Int64) async -> RestResult

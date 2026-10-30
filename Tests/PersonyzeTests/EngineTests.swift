@@ -696,6 +696,47 @@ import Testing
 		#expect(await h.engine.pollNotification(force: true)?.messageId == 6)
 	}
 
+	/// A report goes to the address the server gave, as it is, and without the API key: the key
+	/// goes to `/rest` only.
+	@Test func notificationReportGoesWithoutTheKey() async throws
+	{	let h = Harness()
+		h.transport.on("/white/", ok(""))
+		await h.engine.reportNotification("https://pic.test/white/k=d57hr0hy9dp2/u=7/extra=1?p=p%2F1")
+		let request = try #require(h.transport.requests.last)
+		#expect(request.method == "GET")
+		#expect(request.url.absoluteString == "https://pic.test/white/k=d57hr0hy9dp2/u=7/extra=1?p=p%2F1")
+		#expect(request.headers["Authorization"] == nil)
+		#expect(request.headers["User-Agent"] == "personyze-ios/test")
+		await h.engine.sendNotificationReports()
+		#expect(h.transport.requests.count == 1, "sent, so not kept")
+	}
+
+	@Test func nothingToReportWithIsNotSent() async
+	{	let h = Harness()
+		await h.engine.reportNotification("")
+		await h.engine.reportNotification("http://pic.test/white/k=d57hr0hy9dp2/u=7")
+		await h.engine.reportNotification("javascript:alert(1)")
+		#expect(h.transport.requests.isEmpty)
+	}
+
+	/// A report the server did not get is kept - on disk, so a new process sends it too - and goes
+	/// with the next check. Any answer below 500 is the server's: a 4xx is not sent again.
+	@Test func aReportThatCannotGoNowGoesWithTheNextCheck() async
+	{	let store = MemoryStore()
+		let first = Harness(store: store)
+		first.transport.on("/white/", fail(sent: false))
+		await first.engine.reportNotification("https://pic.test/white/k=d57hr0hy9dp2/u=7")
+		#expect(first.transport.requests.count == 2, "tried, and retried once")
+		#expect(first.errors.all.isEmpty, "a report is not an error the app hears of")
+
+		let second = Harness(store: store)
+		second.transport.on("/white/", status(404))
+		await second.engine.sendNotificationReports()
+		#expect(second.transport.requests.map { $0.url.absoluteString } == ["https://pic.test/white/k=d57hr0hy9dp2/u=7"])
+		await second.engine.sendNotificationReports()
+		#expect(second.transport.requests.count == 1)
+	}
+
 	@Test func resetIsANewVisitor() async
 	{	let h = Harness()
 		_ = await h.engine.navigate("Home", events: nil)

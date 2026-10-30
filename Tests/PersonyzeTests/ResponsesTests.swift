@@ -120,6 +120,13 @@ struct NotificationPollTests
 		#expect(!n.silent)
 		#expect(n.renotify)
 		#expect(n.buttons.map { $0.title } == ["Open"])
+		#expect(n.shownUrl.isEmpty && n.clickUrl.isEmpty, "a server from before the reports")
+	}
+
+	@Test func parsesTheReportAddresses() throws
+	{	let n = try #require(NotificationPoll.parse(#"{"message_id":3,"title":"t","body":"b","shown_url":"https://pic/white/k=a/u=7","click_url":" https://pic/white/k=a/u=7/extra=1 "}"#))
+		#expect(n.shownUrl == "https://pic/white/k=a/u=7")
+		#expect(n.clickUrl == "https://pic/white/k=a/u=7/extra=1")
 	}
 
 	@Test func titleAndBodyAreRequired()
@@ -175,6 +182,7 @@ struct EngineStateTests
 		st.pageReports = [88: ["executed"]]
 		st.pastSessions = [3, 2, 1]
 		st.notifications.delivered = [PersistedNotifications.Delivered(visitor: "7", messageId: 5)]
+		st.notifications.reports = ["https://pic.test/white/k=d57hr0hy9dp2/u=7"]
 		let text = try #require(StateCoding.encode(st))
 		#expect(StateCoding.decode(PersistedState.self, text) == st)
 	}
