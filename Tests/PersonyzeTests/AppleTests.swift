@@ -60,15 +60,18 @@ import WebKit
 	@Test func measuresItsContentAndReportsExecuted() async throws
 	{	let reporter = FakeReporter()
 		let view = PersonyzeActionView(frame: CGRect(x: 0, y: 0, width: 320, height: 10))
+		var posted: [CGFloat] = []
+		view.onHeightChange = { posted.append($0) }
 		let window = onScreen(view)
 		view.render(banner(reporter))
-		try await waitUntil(seconds: 15)
+		// The first page in the process waits for WebKit's content process to start.
+		try await waitUntil(seconds: 30, "the page to load")
+		{	reporter.executed == [88]
+		}
+		try await waitUntil(seconds: 10, "the content's height, intrinsic \(view.intrinsicContentSize.height), posted \(posted)")
 		{	view.intrinsicContentSize.height >= 100
 		}
 		#expect(abs(view.intrinsicContentSize.height - 120) < 30, "height \(view.intrinsicContentSize.height)")
-		try await waitUntil(seconds: 15)
-		{	reporter.executed == [88]
-		}
 		// The same action again: nothing reloads, nothing is reported twice.
 		view.render(banner(reporter))
 		try await Task.sleep(nanoseconds: 500_000_000)
@@ -175,13 +178,14 @@ final class FakeReporter: ActionReporter, @unchecked Sendable
 	}
 }
 
-/// Polls `condition` until it holds; records an issue and throws when it does not in time.
+/// Polls `condition` until it holds; records an issue naming `what` and throws when it does not in
+/// time. `what` is evaluated then, so it can show the state at the timeout.
 @MainActor
-func waitUntil(seconds: Double, _ condition: () -> Bool) async throws
+func waitUntil(seconds: Double, _ what: @autoclosure () -> String = "a condition", _ condition: () -> Bool) async throws
 {	let deadline = Date(timeIntervalSinceNow: seconds)
 	while !condition()
 	{	if Date() > deadline
-		{	Issue.record("timed out after \(seconds) s")
+		{	Issue.record("timed out after \(seconds) s waiting for \(what())")
 			throw CancellationError()
 		}
 		try await Task.sleep(nanoseconds: 50_000_000)
