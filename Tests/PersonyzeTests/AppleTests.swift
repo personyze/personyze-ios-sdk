@@ -2,7 +2,9 @@ import Foundation
 import Testing
 @testable import Personyze
 #if os(iOS)
+@testable import PersonyzeNotificationService
 import UIKit
+import UserNotifications
 import WebKit
 #endif
 
@@ -191,3 +193,55 @@ func waitUntil(seconds: Double, _ what: @autoclosure () -> String = "a condition
 		try await Task.sleep(nanoseconds: 50_000_000)
 	}
 }
+
+#if os(iOS)
+/// A pushed notification's `personyze` object, as Apple delivers it and as the SDK posts its own:
+/// one reader for both (`PersonyzePush.Message`).
+struct PushedNotificationTests
+{	@Test func readsThePushedMessage()
+	{	let info: [String: Any] = [
+			"message_id": 12,
+			"tag": " https://shop/sale ",
+			"image": "",
+			"icon": "https://x/i.png",
+			"actions": [["title": "Open", "icon": "", "action": "https://shop/a"], ["title": "", "icon": "", "action": "https://shop/b"]],
+			"shown_url": "https://pic/white/k=a/u=7",
+			"click_url": "https://pic/white/k=a/u=7/extra=1",
+		]
+		let m = PersonyzePush.Message(info)
+		#expect(m.messageId == 12)
+		#expect(m.url == "https://shop/sale")
+		#expect(m.buttons.map { $0.url } == ["https://shop/a"], "a button without a title is no button")
+		#expect(m.picture == "https://x/i.png", "no picture: the icon")
+		#expect(m.clickUrl == "https://pic/white/k=a/u=7/extra=1")
+	}
+
+	/// The SDK's own notification carries the same object, so a tap reads them alike.
+	@Test func theSdksOwnCarriesTheSameObject() throws
+	{	let n = try #require(NotificationPoll.parse(#"{"message_id":5,"title":"T","body":"B","tag":"https://shop/x","actions":[{"title":"Go","icon":"","action":"https://shop/go"}],"click_url":"https://pic/c"}"#))
+		let m = PersonyzePush.Message(UserNotificationPresenter.userInfo(n))
+		#expect(m.messageId == 5)
+		#expect(m.url == "https://shop/x")
+		#expect(m.buttons.map { $0.title } == ["Go"])
+		#expect(m.clickUrl == "https://pic/c")
+	}
+
+	/// The app's other pushes go through the extension untouched.
+	@Test func anotherPushPassesUntouched() async
+	{	let content = UNMutableNotificationContent()
+		content.title = "Your order shipped"
+		let request = UNNotificationRequest(identifier: "x", content: content, trigger: nil)
+		#expect(!PersonyzeNotificationService.isPersonyze(request))
+		let delivered = Locked<String?>(nil)
+		PersonyzeNotificationService().didReceive(request) { c in
+			delivered.value = c.title
+		}
+		#expect(delivered.value == "Your order shipped")
+	}
+
+	@Test func categoryNamesAreStable()
+	{	#expect(PersonyzePush.fnv1a("Open\nLater") == PersonyzePush.fnv1a("Open\nLater"))
+		#expect(PersonyzePush.fnv1a("") == "cbf29ce484222325")
+	}
+}
+#endif

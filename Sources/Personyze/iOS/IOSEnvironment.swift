@@ -107,6 +107,30 @@ final class IOSPlatform: Platform, @unchecked Sendable
 		BackgroundRefresh.schedule(after: 60)
 	}
 
+	func pushApp() -> PushApp?
+	{	guard let bundleId = Bundle.main.bundleIdentifier else
+		{	return nil
+		}
+		return PushApp(platform: "ios", appId: bundleId, sandbox: IOSPlatform.apsSandbox)
+	}
+
+	/// Whether Apple's push service gives this build its tokens from the sandbox: a development
+	/// build, signed with a profile whose `aps-environment` is `development`. A build from the App
+	/// Store or TestFlight carries no profile and is production, as is an ad hoc one. The server
+	/// tries the other server once when Apple calls a token bad, so a wrong guess costs a request.
+	static let apsSandbox: Bool =
+	{	guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+			let data = try? Data(contentsOf: url),
+			let text = String(data: data, encoding: .isoLatin1),
+			let start = text.range(of: "<?xml"),
+			let end = text.range(of: "</plist>", range: start.lowerBound ..< text.endIndex),
+			let plist = try? PropertyListSerialization.propertyList(from: Data(text[start.lowerBound ..< end.upperBound].utf8), format: nil) as? [String: Any],
+			let entitlements = plist["Entitlements"] as? [String: Any] else
+		{	return false
+		}
+		return entitlements["aps-environment"] as? String == "development"
+	}()
+
 	func log(_ message: String)
 	{	Log.write(message)
 	}
@@ -264,7 +288,7 @@ enum BackgroundRefresh
 			{	sent = await client.flushInBackground()
 				if client.notificationsWanted
 				{	_ = await client.checkNotifications(force: false)
-					schedule(after: 15*60)
+					schedule(after: TimeInterval(client.engine.backgroundCheckSeconds()))
 				}
 				if !sent
 				{	schedule(after: 15*60)
@@ -342,6 +366,9 @@ enum AppLifecycle
 		}
 	}
 
+	/// The app is in front: what is queued goes, and the notifications are checked - once a minute
+	/// at most, the visitor being there to see one (SPEC section 11). Where the user allows them,
+	/// iOS is asked for the device's push token, which the app passes on (`Personyze.setPushToken`).
 	private static func didBecomeActive()
 	{	guard let client = Personyze.client else
 		{	return
@@ -349,8 +376,28 @@ enum AppLifecycle
 		Task {
 			_ = await client.flushInBackground()
 			if client.notificationsWanted
-			{	_ = await client.checkNotifications(force: false)
+			{	if await UserNotificationPresenter.allowed()
+				{	await RemoteNotifications.register()
+				}
+				_ = await client.checkNotifications(force: false, foreground: true)
 			}
+		}
+	}
+}
+
+/// Asking iOS for the device's push token, once a launch - Apple's advice, since a token may
+/// change. iOS answers the app delegate (`didRegisterForRemoteNotificationsWithDeviceToken`),
+/// which the SDK does not take: the app passes the token on. An app without the Push
+/// Notifications capability is answered with an error there instead, and is checked for its
+/// notifications as before.
+@MainActor
+enum RemoteNotifications
+{	private static var asked = false
+
+	static func register()
+	{	if !asked
+		{	asked = true
+			UIApplication.shared.registerForRemoteNotifications()
 		}
 	}
 }

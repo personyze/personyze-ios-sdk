@@ -27,6 +27,10 @@ enum Endpoints
 	{	"ab_test/where/condition_id=\(conditionId)"
 	}
 
+	/// `PUT`: the device a push reaches (SPEC section 11). Everything goes in the body: a token can
+	/// hold a `:`, which a `/where/` path reads as an operator.
+	static let pushToken = "push_token"
+
 	/// The visitor's queued notification, by the visitor id - the id the server makes of `user_id`,
 	/// which is what field 1 of their session holds. It needs no encoding, and is all the server
 	/// reads from a session here (SPEC section 11).

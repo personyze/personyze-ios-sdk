@@ -92,7 +92,38 @@ func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive respo
 
 The campaign's statistics count each notification shown and each tap on it or its buttons - the tap through
 `handleNotificationResponse` - as they count a website's push. A report that cannot go at once (no network)
-goes with the next notification check.
+goes with the next notification check. The SDK checks as the app comes to the front (once a minute at most), and
+in the background as iOS allows.
+
+#### Pushed at once (Apple's push service)
+
+With the account's Apple push key uploaded in the Personyze panel (Integrations › App push), a campaign reaches
+the phone at once, even with the app closed, instead of at the app's next check. In the app's target, add the
+Push Notifications capability, and pass the device token on from the app delegate - the SDK asks iOS for it
+itself, once the user allows notifications:
+
+```swift
+func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data)
+{	Personyze.setPushToken(deviceToken)
+}
+```
+
+Taps on a pushed notification go through `handleNotificationResponse` as above. The SDK registers the device with
+Personyze for the current visitor, again after a login or a logout, and takes it off when the notifications are
+turned off or the visitor is reset; once Personyze pushes to the device, the background check is rare. A push
+that does not go is still shown at the app's next check.
+
+iOS draws a pushed notification by itself: title, text, sound. For its picture and buttons, and for the campaign
+to count it shown before it is tapped, add a Notification Service Extension (File › New › Target › Notification
+Service Extension) with this package's `PersonyzeNotificationService` library, its class Personyze's:
+
+```swift
+import PersonyzeNotificationService
+
+class NotificationService: PersonyzeNotificationService
+{
+}
+```
 
 ### Upgrading from 1.x
 
@@ -116,6 +147,7 @@ session, their recent sessions and the actions they closed. Nothing to do in the
 | `iOS/IOSEnvironment.swift` | The device from UIKit, the network, the background send and refresh, the app's foreground and background |
 | `iOS/PersonyzeActionView.swift` | The web view an action renders in, and `PersonyzeActionContent` for SwiftUI |
 | `iOS/UserNotificationPresenter.swift` | Notifications, and `Personyze.handleNotificationResponse` |
+| `Sources/PersonyzeNotificationService` | The library for the app's Notification Service Extension: a pushed notification's picture, buttons and "shown" report; also how the SDK draws its own |
 | `Apple/PersonyzeModel.swift` | The decision and the visitor as an `ObservableObject` |
 | `Core/LegacyDefaults.swift` | 1.x's state in `UserDefaults`, read once on upgrade |
 

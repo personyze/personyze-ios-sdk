@@ -338,9 +338,17 @@ public enum Personyze
 	{	await client?.checkNotifications()
 	}
 
-	/// Turn the periodic notification check on or off (also `PersonyzeConfig.notifications`).
+	/// Turn the notifications on or off (also `PersonyzeConfig.notifications`): the periodic check,
+	/// and the device's push registration.
 	public static func setNotificationsEnabled(_ enabled: Bool)
 	{	events("setNotificationsEnabled") { $0.setNotificationsEnabled(enabled) }
+	}
+
+	/// The device token Apple's push service gave the app, passed on from your app delegate's
+	/// `application(_:didRegisterForRemoteNotificationsWithDeviceToken:)`: Personyze then pushes
+	/// this visitor's notifications to the device at once (`PersonyzeClient.setPushToken`).
+	public static func setPushToken(_ deviceToken: Data)
+	{	events("setPushToken") { $0.setPushToken(deviceToken) }
 	}
 
 	/// Who is winning the A/B test of campaign `conditionId`.

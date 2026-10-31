@@ -309,7 +309,7 @@ final class FakePresenter: NotificationPresenter, @unchecked Sendable
 		return true
 	}
 
-	func schedulePolling(_ enabled: Bool)
+	func schedulePolling(_ enabled: Bool, everySeconds: Int)
 	{	lock.locked
 		{	pollingCalls.append(enabled)
 		}

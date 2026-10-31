@@ -1,17 +1,17 @@
 #if os(iOS)
 import Foundation
+import PersonyzeNotificationService
 import UIKit
 import UserNotifications
 
 /// Shows a Personyze notification as a local notification: one at a time, a new one replacing the
-/// last, as on Android. The picture (or else the icon) is attached; the buttons become the
-/// notification's actions. Where a tap goes is the app's to pass on - the notification center's
+/// last, as on Android - and replacing, or replaced by, the same message pushed (it carries the
+/// push's collapse id). The picture (or else the icon) is attached; the buttons become the
+/// notification's actions - as the app's Notification Service Extension does to a pushed one
+/// (`PersonyzePush`). Where a tap goes is the app's to pass on - the notification center's
 /// delegate is the app's, so the SDK does not take it: `Personyze.handleNotificationResponse`.
 struct UserNotificationPresenter: NotificationPresenter
-{	static let requestId = "personyze"
-	static let userInfoKey = "personyze"
-	static let buttonPrefix = "personyze.button."
-
+{
 	/// Whether the user allows the app's notifications to appear anywhere.
 	static func allowed() async -> Bool
 	{	let s = await UNUserNotificationCenter.current().notificationSettings()
@@ -34,23 +34,16 @@ struct UserNotificationPresenter: NotificationPresenter
 		if !notification.silent
 		{	content.sound = .default
 		}
-		content.threadIdentifier = UserNotificationPresenter.requestId
-		content.userInfo = [
-			UserNotificationPresenter.userInfoKey: [
-				"url": notification.url,
-				"buttons": notification.buttons.map { $0.url },
-				"message_id": NSNumber(value: notification.messageId),
-				"click_url": notification.clickUrl,
-			] as [String: Any],
-		]
-		if let attachment = await UserNotificationPresenter.attachment(notification.imageUrl.isEmpty ? notification.iconUrl : notification.imageUrl)
+		content.threadIdentifier = PersonyzePush.requestId
+		content.userInfo = [PersonyzePush.userInfoKey: UserNotificationPresenter.userInfo(notification)]
+		if let attachment = await PersonyzePush.attachment(notification.imageUrl.isEmpty ? notification.iconUrl : notification.imageUrl)
 		{	content.attachments = [attachment]
 		}
 		if !notification.buttons.isEmpty
-		{	content.categoryIdentifier = await UserNotificationPresenter.category(notification.buttons.map { $0.title })
+		{	content.categoryIdentifier = await PersonyzePush.category(notification.buttons.map { $0.title })
 		}
 		do
-		{	try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UserNotificationPresenter.requestId, content: content, trigger: nil))
+		{	try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: PersonyzePush.requestId, content: content, trigger: nil))
 			return true
 		}
 		catch
@@ -59,50 +52,24 @@ struct UserNotificationPresenter: NotificationPresenter
 		}
 	}
 
-	func schedulePolling(_ enabled: Bool)
+	func schedulePolling(_ enabled: Bool, everySeconds: Int)
 	{	if enabled
-		{	BackgroundRefresh.schedule(after: 15*60)
+		{	BackgroundRefresh.schedule(after: TimeInterval(everySeconds))
 		}
 	}
 
-	/// A category whose actions are these buttons, one per set of titles, added beside the app's
-	/// own categories - `setNotificationCategories` replaces them all, so they are read first.
-	static func category(_ titles: [String]) async -> String
-	{	let id = "personyze." + SHA256.hex(titles.joined(separator: "\n")).prefix(16)
-		let center = UNUserNotificationCenter.current()
-		var categories = await center.notificationCategories()
-		if !categories.contains(where: { $0.identifier == id })
-		{	let actions = titles.enumerated().map { i, title in
-				UNNotificationAction(identifier: buttonPrefix + String(i), title: title, options: [.foreground])
-			}
-			categories.insert(UNNotificationCategory(identifier: id, actions: actions, intentIdentifiers: [], options: []))
-			center.setNotificationCategories(categories)
-		}
-		return id
-	}
-
-	/// An image to attach: downloaded to a file, which is what a notification takes, named by its
-	/// type, which is how the notification tells it. Nil when it cannot be had within 10 seconds.
-	static func attachment(_ address: String) async -> UNNotificationAttachment?
-	{	guard let url = URL(string: address), url.scheme?.lowercased() == "https" else
-		{	return nil
-		}
-		let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
-		guard let (file, response) = try? await URLSession.shared.download(for: request), (response as? HTTPURLResponse)?.statusCode == 200 else
-		{	return nil
-		}
-		let types = ["image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/heic": "heic"]
-		guard let ext = response.mimeType.flatMap({ types[$0.lowercased()] }) ?? (url.pathExtension.isEmpty ? nil : url.pathExtension.lowercased()) else
-		{	return nil
-		}
-		let destination = FileManager.default.temporaryDirectory.appendingPathComponent("personyze-\(UUID().uuidString).\(ext)")
-		do
-		{	try FileManager.default.moveItem(at: file, to: destination)
-			return try UNNotificationAttachment(identifier: "picture", url: destination, options: nil)
-		}
-		catch
-		{	return nil
-		}
+	/// The `personyze` object a notification carries - what `GET current_notification` answered,
+	/// as a push carries it too (`PersonyzePush.Message` reads either).
+	static func userInfo(_ n: PersonyzeNotification) -> [String: Any]
+	{	[	"message_id": NSNumber(value: n.messageId),
+			"tag": n.url,
+			"image": n.imageUrl,
+			"icon": n.iconUrl,
+			"actions": n.buttons.map { ["title": $0.title, "icon": $0.iconUrl, "action": $0.url] },
+			"silent": n.silent,
+			"shown_url": n.shownUrl,
+			"click_url": n.clickUrl,
+		]
 	}
 }
 
@@ -125,21 +92,25 @@ extension Personyze
 	///
 	/// A notification arriving while the app is in front appears only if the delegate's
 	/// `userNotificationCenter(_:willPresent:)` says so.
+	///
+	/// The same for a notification Personyze pushed (`Personyze.setPushToken`) as for one the app's
+	/// own check posted: both carry the same `personyze` object.
 	@discardableResult
 	public static func handleNotificationResponse(_ response: UNNotificationResponse) -> Bool
-	{	guard let info = response.notification.request.content.userInfo[UserNotificationPresenter.userInfoKey] as? [String: Any] else
+	{	guard let info = response.notification.request.content.userInfo[PersonyzePush.userInfoKey] as? [String: Any] else
 		{	return false
 		}
 		let action = response.actionIdentifier
 		if action == UNNotificationDismissActionIdentifier
 		{	return true
 		}
-		if let report = info["click_url"] as? String, !report.isEmpty
-		{	reportTap(report)
+		let message = PersonyzePush.Message(info)
+		if !message.clickUrl.isEmpty
+		{	reportTap(message.clickUrl)
 		}
-		var address = info["url"] as? String ?? ""
-		if action.hasPrefix(UserNotificationPresenter.buttonPrefix), let i = Int(action.dropFirst(UserNotificationPresenter.buttonPrefix.count)), let buttons = info["buttons"] as? [String], buttons.indices.contains(i)
-		{	address = buttons[i]
+		var address = message.url
+		if action.hasPrefix(PersonyzePush.buttonPrefix), let i = Int(action.dropFirst(PersonyzePush.buttonPrefix.count)), message.buttons.indices.contains(i)
+		{	address = message.buttons[i].url
 		}
 		if let url = SafeLink.url(address, assetsUrl: nil)
 		{	Task { @MainActor in

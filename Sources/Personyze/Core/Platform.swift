@@ -21,7 +21,20 @@ protocol Platform: Sendable
 	/// Have queued events sent later, when the network is back - a background task on iOS.
 	func scheduleOutboxFlush()
 
+	/// The app as a push service knows it, or nil where there is no push.
+	func pushApp() -> PushApp?
+
 	func log(_ message: String)
+}
+
+/// The app a device token is for (SPEC section 11): what `PUT push_token` sends with it.
+struct PushApp: Sendable, Equatable
+{	/// "ios" or "android".
+	var platform: String
+	/// The bundle id - the topic Apple pushes it under.
+	var appId: String
+	/// A development build, whose token only Apple's sandbox serves.
+	var sandbox: Bool
 }
 
 /// Shows the notifications a "Web Push Send" action queues - the user notification center on
@@ -33,8 +46,8 @@ protocol NotificationPresenter: Sendable
 	/// Post it. False when it could not be posted.
 	func show(_ notification: PersonyzeNotification) async -> Bool
 
-	/// Check for notifications periodically in the background, or stop.
-	func schedulePolling(_ enabled: Bool)
+	/// Check for notifications periodically in the background, about every `everySeconds`, or stop.
+	func schedulePolling(_ enabled: Bool, everySeconds: Int)
 }
 
 /// Where no notification can be shown.
@@ -47,7 +60,7 @@ struct NoNotifications: NotificationPresenter
 	{	false
 	}
 
-	func schedulePolling(_ enabled: Bool)
+	func schedulePolling(_ enabled: Bool, everySeconds: Int)
 	{
 	}
 }

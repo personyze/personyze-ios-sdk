@@ -737,6 +737,107 @@ import Testing
 		#expect(second.transport.requests.count == 1)
 	}
 
+	// MARK: - push (SPEC section 11)
+
+	private func pushHarness(answer: String = #"{"push":true}"#) -> Harness
+	{	let h = Harness()
+		h.platform.app = PushApp(platform: "ios", appId: "com.shop.app", sandbox: true)
+		h.platform.showable = true
+		h.transport.on("/rest/push_token", ok(answer))
+		return h
+	}
+
+	private func pushBodies(_ h: Harness) -> [JSON]
+	{	h.transport.requests.filter { $0.url.absoluteString.hasSuffix("/rest/push_token") }.map { JSON.parse($0.body ?? "") ?? .null }
+	}
+
+	/// Registered once there is a visitor on the server, with the app - and again only when there is
+	/// something new to say, or a week on.
+	@Test func pushTokenIsRegisteredForTheVisitor() async throws
+	{	let h = pushHarness()
+		h.engine.setPushToken("a1b2c3")
+		await h.engine.idle()
+		#expect(pushBodies(h).isEmpty, "no visitor yet")
+		_ = await h.engine.navigate("Home", events: nil)
+		await h.engine.idle()
+		let visitor = try #require(h.engine.visitor.value.visitorId)
+		#expect(pushBodies(h) == [.object(["user_id": .int(Int64(visitor)), "token": .string("a1b2c3"), "platform": .string("ios"), "app_id": .string("com.shop.app"), "sandbox": .bool(true), "enabled": .bool(true)])])
+		#expect(h.transport.requests.last?.method == "PUT")
+		#expect(h.engine.backgroundCheckSeconds() == 6*3600, "pushed: the background checks are few")
+		await h.engine.registerPush()
+		#expect(pushBodies(h).count == 1, "nothing new to say")
+		h.platform.advanceWall(8*24*3600_000)
+		await h.engine.registerPush()
+		#expect(pushBodies(h).count == 2, "a week on")
+	}
+
+	/// Without a key for the platform the device is still registered - a key added later finds it -
+	/// and the app goes on checking every 15 minutes.
+	@Test func withoutAKeyTheChecksStayAsTheyWere() async
+	{	let h = pushHarness(answer: #"{"push":false}"#)
+		h.engine.setPushToken("a1b2c3")
+		_ = await h.engine.navigate("Home", events: nil)
+		await h.engine.idle()
+		#expect(pushBodies(h).count == 1)
+		#expect(h.engine.backgroundCheckSeconds() == 15*60)
+	}
+
+	@Test func notificationsTurnedOffTakeTheDeviceOff() async
+	{	let h = pushHarness()
+		h.engine.setPushToken("a1b2c3")
+		_ = await h.engine.navigate("Home", events: nil)
+		await h.engine.idle()
+		h.platform.showable = false
+		await h.engine.registerPush()
+		#expect(pushBodies(h).last == .object(["token": .string("a1b2c3"), "enabled": .bool(false)]))
+		#expect(h.engine.backgroundCheckSeconds() == 15*60)
+		await h.engine.registerPush()
+		#expect(pushBodies(h).count == 2, "off once")
+	}
+
+	/// The forgotten visitor's notifications reach the device no more; the new visitor registers it.
+	@Test func resetTakesTheOldVisitorOffAndKeepsTheToken() async throws
+	{	let h = pushHarness()
+		h.engine.setPushToken("a1b2c3")
+		_ = await h.engine.navigate("Home", events: nil)
+		await h.engine.idle()
+		let before = try #require(h.engine.visitor.value.visitorId)
+		await h.engine.reset()
+		#expect(pushBodies(h).last == .object(["token": .string("a1b2c3"), "enabled": .bool(false)]))
+		_ = await h.engine.navigate("Home", events: nil)
+		await h.engine.idle()
+		let after = try #require(h.engine.visitor.value.visitorId)
+		#expect(before != after)
+		#expect(pushBodies(h).last?["user_id"] == .int(Int64(after)))
+		#expect(pushBodies(h).count == 3)
+	}
+
+	/// No push where the platform has none (macOS, Linux) - and none without a token.
+	@Test func noPushWithoutAnApp() async
+	{	let h = Harness()
+		h.platform.showable = true
+		h.engine.setPushToken("a1b2c3")
+		_ = await h.engine.navigate("Home", events: nil)
+		await h.engine.idle()
+		#expect(pushBodies(h).isEmpty)
+	}
+
+	/// As the app comes to the front the visitor is there to see one: checked, but once a minute at most.
+	@Test func foregroundChecksAreOnceAMinute() async
+	{	let h = Harness()
+		h.transport.on("/rest/current_notification/", ok("null"))
+		_ = await h.engine.navigate("Home", events: nil)
+		let checks = { h.transport.requests.filter { $0.url.absoluteString.contains("/current_notification/") }.count }
+		_ = await h.engine.pollNotification(force: false, foreground: true)
+		_ = await h.engine.pollNotification(force: false, foreground: true)
+		#expect(checks() == 1)
+		h.platform.advanceWall(61_000)
+		_ = await h.engine.pollNotification(force: false, foreground: true)
+		#expect(checks() == 2)
+		_ = await h.engine.pollNotification(force: false)
+		#expect(checks() == 2, "the background's 15 minutes")
+	}
+
 	@Test func resetIsANewVisitor() async
 	{	let h = Harness()
 		_ = await h.engine.navigate("Home", events: nil)

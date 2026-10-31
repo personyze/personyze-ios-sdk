@@ -30,6 +30,7 @@ struct PersistedState: Codable, Sendable, Equatable
 	var notifications = PersistedNotifications()
 	/// Device time until which the account is treated as paused (HTTP 429).
 	var throttledUntilMs: Int64 = 0
+	var push = PersistedPush()
 
 	init(apiKeyFp: String? = nil, userId: UserId? = nil)
 	{	self.apiKeyFp = apiKeyFp
@@ -52,6 +53,33 @@ struct PersistedState: Codable, Sendable, Equatable
 		pageReports = try c.decodeIfPresent([Int: [String]].self, forKey: .pageReports) ?? [:]
 		notifications = try c.decodeIfPresent(PersistedNotifications.self, forKey: .notifications) ?? PersistedNotifications()
 		throttledUntilMs = try c.decodeIfPresent(Int64.self, forKey: .throttledUntilMs) ?? 0
+		push = try c.decodeIfPresent(PersistedPush.self, forKey: .push) ?? PersistedPush()
+	}
+}
+
+/// The device's push registration (SPEC section 11): the token the app passed on, and what
+/// Personyze has of it.
+struct PersistedPush: Codable, Sendable, Equatable
+{	/// What Apple's push service gave this install; nil before the app passes one on.
+	var token: String?
+	/// "<visitor id> <token>" as last registered: registered again when either changes, or a week
+	/// has passed. Nil when Personyze has no registration of this device.
+	var registered: String?
+	var registeredAtMs: Int64 = 0
+	/// Whether Personyze pushes to this device - the account has a key for the platform (what the
+	/// registration answered). Then the background checks are few.
+	var active = false
+
+	init()
+	{
+	}
+
+	init(from decoder: any Decoder) throws
+	{	let c = try decoder.container(keyedBy: CodingKeys.self)
+		token = try c.decodeIfPresent(String.self, forKey: .token)
+		registered = try c.decodeIfPresent(String.self, forKey: .registered)
+		registeredAtMs = try c.decodeIfPresent(Int64.self, forKey: .registeredAtMs) ?? 0
+		active = try c.decodeIfPresent(Bool.self, forKey: .active) ?? false
 	}
 }
 

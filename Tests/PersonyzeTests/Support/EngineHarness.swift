@@ -18,6 +18,7 @@ final class FakePlatform: Platform, @unchecked Sendable
 	private var isOnlineNow = true
 	private var showableNow = false
 	private var outboxScheduledCount = 0
+	private var pushAppValue: PushApp?
 
 	var device = DeviceContext(platform: "iOS", timeZone: 3, languages: "en-US,he-IL", screen: "390x844", os: "iOS/17.2", deviceType: "phone")
 
@@ -48,10 +49,22 @@ final class FakePlatform: Platform, @unchecked Sendable
 	{	device
 	}
 
-	func notificationsShowable() -> Bool
-	{	lock.locked
-		{	showableNow
+	/// Whether notifications could be shown: false until a test says so.
+	var showable: Bool
+	{	get
+		{	lock.locked
+			{	showableNow
+			}
 		}
+		set
+		{	lock.locked
+			{	showableNow = newValue
+			}
+		}
+	}
+
+	func notificationsShowable() -> Bool
+	{	showable
 	}
 
 	func isOnline() -> Bool
@@ -64,6 +77,24 @@ final class FakePlatform: Platform, @unchecked Sendable
 	{	lock.locked
 		{	outboxScheduledCount += 1
 		}
+	}
+
+	/// The app push is registered for; nil (the default) where a test has none.
+	var app: PushApp?
+	{	get
+		{	lock.locked
+			{	pushAppValue
+			}
+		}
+		set
+		{	lock.locked
+			{	pushAppValue = newValue
+			}
+		}
+	}
+
+	func pushApp() -> PushApp?
+	{	app
 	}
 
 	func log(_ message: String)

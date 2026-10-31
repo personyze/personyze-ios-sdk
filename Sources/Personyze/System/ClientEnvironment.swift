@@ -94,6 +94,11 @@ struct SystemPlatform: Platform
 	{
 	}
 
+	/// No push here: no device token to register.
+	func pushApp() -> PushApp?
+	{	nil
+	}
+
 	func log(_ message: String)
 	{	Log.write(message)
 	}

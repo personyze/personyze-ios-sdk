@@ -53,6 +53,12 @@ final class Engine: @unchecked Sendable
 	static let deliveredKept = 20
 	/// Notification reports not sent yet, kept until they are; the oldest go first past this.
 	static let reportsKept = 10
+	/// A check as the app comes to the front, at most this often.
+	static let foregroundCheckMs: Int64 = 60_000
+	/// A background check where Personyze pushes to the device.
+	static let pushedCheckMs: Int64 = 6*3600_000
+	/// A device registered for push is registered again after this, so Personyze keeps it.
+	static let pushRegisterAgainMs: Int64 = 7*24*3600_000
 	static let clockSkewMs: Int64 = 60_000
 	static let maxSafeInteger: Int64 = 9_007_199_254_740_991
 
@@ -74,6 +80,8 @@ final class Engine: @unchecked Sendable
 	private let meta = AsyncMutex()
 	/// One pass over the notification reports at a time, so none goes twice.
 	private let reportWire = AsyncMutex()
+	/// One push registration at a time.
+	private let pushWire = AsyncMutex()
 	private let loaded = Latch()
 	private let tasks = TaskSet()
 	/// Saves, off the caller's thread, in order.
@@ -793,6 +801,15 @@ final class Engine: @unchecked Sendable
 		if needsMetadata()
 		{	fetchMetadataInBackground()
 		}
+		// The visitor may be new to Personyze, or another: the device registered for them.
+		let hasToken = lock.locked
+		{	state.push.token != nil
+		}
+		if hasToken
+		{	tasks.run { [self] in
+				await registerPush()
+			}
+		}
 	}
 
 	/// Nothing reached Personyze: the events stay queued for when it can, a navigation does not.
@@ -880,12 +897,20 @@ final class Engine: @unchecked Sendable
 
 	func reset() async
 	{	await loaded.wait()
+		// The forgotten visitor's notifications reach this device no more; the new visitor registers it again.
+		let push = lock.locked
+		{	state.push
+		}
+		if let token = push.token, push.registered != nil
+		{	_ = await rest.call("PUT", Endpoints.pushToken, body: JSON.serialize(orderedObject: [("token", .string(token)), ("enabled", .bool(false))]), budgetMs: config.backgroundTimeoutMs)
+		}
 		await wire.withLock
 		{	await meta.withLock
 			{	let visitorId = lock.locked
 				{	() -> Int32 in
 					installVisitor = Engine.newAnonymousId()
 					state = PersistedState(apiKeyFp: apiKeyFp)
+					state.push.token = push.token
 					pending.removeAll()
 					metadata = MetadataFile(apiKeyFp: apiKeyFp)
 					emitLocked()
@@ -1041,13 +1066,19 @@ final class Engine: @unchecked Sendable
 
 	/// Fetch the visitor's queued notification. Answers it when it is to be shown - not shown
 	/// before to this visitor - and marks it shown first, so a crash while posting cannot repeat it.
-	func pollNotification(force: Bool) async -> PersonyzeNotification?
+	///
+	/// How often (SPEC section 11): `force` at once; as the app comes to the front (`foreground`)
+	/// once a minute at most - the visitor is there to see it; otherwise, in the background, every
+	/// 15 minutes, or every 6 hours when Personyze pushes to the device - the check is then only the
+	/// fallback for a push that did not go.
+	func pollNotification(force: Bool, foreground: Bool = false) async -> PersonyzeNotification?
 	{	await loaded.wait()
 		let now = platform.nowMs()
 		let request = lock.locked
 		{	() -> (path: String, visitor: String)? in
 			let n = state.notifications
-			if !force && now < n.lastCheckMs + Engine.notificationIntervalMs - 60_000
+			let interval = force ? 0 : foreground ? Engine.foregroundCheckMs : state.push.active ? Engine.pushedCheckMs : Engine.notificationIntervalMs - 60_000
+			if now < n.lastCheckMs + interval
 			{	return nil
 			}
 			// No request yet, no visitor on the server, nothing queued for one.
@@ -1088,6 +1119,89 @@ final class Engine: @unchecked Sendable
 		}
 		persistNow()
 		return show ? notification : nil
+	}
+
+	/// How long the background may wait before it checks again, in seconds: longer when Personyze
+	/// pushes to the device.
+	func backgroundCheckSeconds() -> Int
+	{	let active = lock.locked
+		{	state.push.active
+		}
+		return Int((active ? Engine.pushedCheckMs : Engine.notificationIntervalMs)/1000)
+	}
+
+	/// The token Apple's push service gave the install, as the app passes it on (nil: none any
+	/// more). Registered as soon as there is a visitor to register it for.
+	func setPushToken(_ token: String?)
+	{	mutate { [self] in
+			if token != state.push.token
+			{	state.push.token = token
+				persistSoon()
+			}
+		}
+		tasks.run { [self] in
+			await registerPush()
+		}
+	}
+
+	/// Tell Personyze which device this visitor's notifications can be pushed to (SPEC section 11,
+	/// `PUT push_token`) - when there is something new to tell: a token, a visitor (a login, a
+	/// logout, a reset), or a week since the last time. Where the notifications cannot be shown
+	/// any more (turned off in the app or by the user), the device is taken off instead. Best
+	/// effort: what fails is tried again at the next chance - a response, a check, the app's
+	/// return to the front.
+	func registerPush() async
+	{	await loaded.wait()
+		guard let app = platform.pushApp() else
+		{	return
+		}
+		await pushWire.withLock
+		{	let now = platform.nowMs()
+			let showable = platform.notificationsShowable()
+			let job = lock.locked
+			{	() -> (body: String, signature: String?)? in
+				let p = state.push
+				guard let token = p.token else
+				{	return nil
+				}
+				if !showable
+				{	return p.registered == nil ? nil : (JSON.serialize(orderedObject: [("token", .string(token)), ("enabled", .bool(false))]), nil)
+				}
+				guard state.session != nil, let visitor = Session.serverUserId(currentUserLocked()) else
+				{	return nil
+				}
+				let signature = "\(visitor) \(token)"
+				if p.registered == signature && now < p.registeredAtMs + Engine.pushRegisterAgainMs
+				{	return nil
+				}
+				let body = JSON.serialize(
+					orderedObject: [
+						("user_id", .int(Int64(visitor))),
+						("token", .string(token)),
+						("platform", .string(app.platform)),
+						("app_id", .string(app.appId)),
+						("sandbox", .bool(app.sandbox)),
+						("enabled", .bool(true)),
+					]
+				)
+				return (body, signature)
+			}
+			guard let job else
+			{	return
+			}
+			switch await rest.call("PUT", Endpoints.pushToken, body: job.body, budgetMs: config.backgroundTimeoutMs)
+			{	case .ok(let text, _):
+					let active = job.signature != nil && Wire.bool(JSON.parse(text)?["push"])
+					lock.locked
+					{	state.push.registered = job.signature
+						state.push.registeredAtMs = now
+						state.push.active = active
+					}
+					persistSoon()
+				case .failed(let error, _):
+					platform.log("Personyze: the device could not be registered for push now: \(error.message)")
+			}
+		}
 	}
 
 	/// Report a notification shown, or tapped (SPEC section 11): fetch the address `GET

@@ -12,9 +12,13 @@ let package = Package(
 	],
 	products: [
 		.library(name: "Personyze", targets: ["Personyze"]),
+		// For the app's Notification Service Extension: a pushed notification's picture, buttons and "shown" report. Small,
+		// and with nothing of the SDK's own in it - an extension has little memory and no app around it.
+		.library(name: "PersonyzeNotificationService", targets: ["PersonyzeNotificationService"]),
 	],
 	targets: [
-		.target(name: "Personyze"),
-		.testTarget(name: "PersonyzeTests", dependencies: ["Personyze"]),
+		.target(name: "Personyze", dependencies: ["PersonyzeNotificationService"]),
+		.target(name: "PersonyzeNotificationService"),
+		.testTarget(name: "PersonyzeTests", dependencies: ["Personyze", "PersonyzeNotificationService"]),
 	]
 )

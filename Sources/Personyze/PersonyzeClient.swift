@@ -37,7 +37,7 @@ public final class PersonyzeClient: Sendable, ActionReporter, CustomStringConver
 		)
 		recorder = PersonyzeEvents(engine: engine)
 		owner.value = self
-		env.presenter.schedulePolling(config.notifications)
+		env.presenter.schedulePolling(config.notifications, everySeconds: engine.backgroundCheckSeconds())
 	}
 
 	// MARK: - decisions
@@ -259,10 +259,13 @@ public final class PersonyzeClient: Sendable, ActionReporter, CustomStringConver
 	}
 
 	/// Reports kept from before go first: a tap made offline, a report the process did not live to
-	/// send. A notification posted is reported shown, and taken off the server's queue.
-	func checkNotifications(force: Bool) async -> PersonyzeNotification?
+	/// send; and the device's push registration, when it has something new to say. A notification
+	/// posted is reported shown, and taken off the server's queue. `foreground`: the app has just
+	/// come to the front - checked once a minute at most (SPEC section 11).
+	func checkNotifications(force: Bool, foreground: Bool = false) async -> PersonyzeNotification?
 	{	await engine.sendNotificationReports()
-		guard await presenter.canShow(), let notification = await engine.pollNotification(force: force) else
+		await engine.registerPush()
+		guard await presenter.canShow(), let notification = await engine.pollNotification(force: force, foreground: foreground) else
 		{	return nil
 		}
 		if await presenter.show(notification)
@@ -278,10 +281,29 @@ public final class PersonyzeClient: Sendable, ActionReporter, CustomStringConver
 	{	notificationsEnabled.value
 	}
 
-	/// Turn the periodic notification check on or off (also `PersonyzeConfig.notifications`).
+	/// Turn the notifications on or off (also `PersonyzeConfig.notifications`): the periodic check,
+	/// and the device's push registration - turned off, Personyze stops pushing to it.
 	public func setNotificationsEnabled(_ enabled: Bool)
 	{	notificationsEnabled.value = enabled
-		presenter.schedulePolling(enabled)
+		presenter.schedulePolling(enabled, everySeconds: engine.backgroundCheckSeconds())
+		Task { [engine] in
+			await engine.registerPush()
+		}
+	}
+
+	/// The device token Apple's push service gave the app: pass it on from your app delegate, and
+	/// Personyze pushes this visitor's notifications to the device at once - when the account has
+	/// its Apple push key (Integrations › App push in the Personyze panel). The SDK asks iOS for
+	/// the token itself, once the user allows notifications; the app's target needs the Push
+	/// Notifications capability.
+	///
+	/// ```swift
+	/// func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data)
+	/// {	Personyze.setPushToken(deviceToken)
+	/// }
+	/// ```
+	public func setPushToken(_ deviceToken: Data)
+	{	engine.setPushToken(deviceToken.map { String(format: "%02x", $0) }.joined())
 	}
 
 	/// Who is winning the A/B test of campaign `conditionId`.
@@ -307,7 +329,7 @@ public final class PersonyzeClient: Sendable, ActionReporter, CustomStringConver
 	}
 
 	func close()
-	{	presenter.schedulePolling(false)
+	{	presenter.schedulePolling(false, everySeconds: 0)
 		engine.close()
 	}
 
