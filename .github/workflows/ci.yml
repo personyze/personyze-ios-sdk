@@ -29,7 +29,7 @@ jobs:
       - name: Engine tests on macOS
         run: swift test
       - name: Build for iOS (compiles the UIKit/WebKit layer Linux skips)
-        run: xcodebuild build -scheme Personyze -destination 'generic/platform=iOS Simulator' -quiet
+        run: xcodebuild build -scheme Personyze-Package -destination 'generic/platform=iOS Simulator' -quiet
       - name: Tests on an iOS Simulator
         run: |
           udid=$(xcrun simctl list devices available --json | python3 -c '
@@ -38,7 +38,7 @@ jobs:
           print(next(d["udid"] for runtime, list in devices.items() if "iOS" in runtime for d in list if d["name"].startswith("iPhone")))
           ')
           status=0
-          xcodebuild test -scheme Personyze -destination "id=$udid" -resultBundlePath simulator.xcresult -quiet || status=$?
+          xcodebuild test -scheme Personyze-Package -destination "id=$udid" -resultBundlePath simulator.xcresult -quiet || status=$?
           # The count and the failures from the result bundle: -quiet prints neither (its "Executed 0
           # tests" is XCTest's count; these are Swift Testing tests), and no test run is a failure.
           xcrun xcresulttool get test-results summary --path simulator.xcresult --format json | python3 -c '

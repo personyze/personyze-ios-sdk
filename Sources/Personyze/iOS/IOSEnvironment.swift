@@ -377,7 +377,7 @@ enum AppLifecycle
 			_ = await client.flushInBackground()
 			if client.notificationsWanted
 			{	if await UserNotificationPresenter.allowed()
-				{	await RemoteNotifications.register()
+				{	RemoteNotifications.register()
 				}
 				_ = await client.checkNotifications(force: false, foreground: true)
 			}
