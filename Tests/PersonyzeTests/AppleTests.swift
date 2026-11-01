@@ -192,7 +192,14 @@ final class FakeReporter: ActionReporter, @unchecked Sendable
 	{	if done
 		{	return
 		}
-		let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 10, height: 10))
+		// In a window, as the tests' own views are: an iOS web view off screen may be left unloaded.
+		let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+		let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 320, height: 100))
+		window.addSubview(web)
+		window.isHidden = false
+		defer
+		{	window.isHidden = true
+		}
 		web.loadHTMLString("<html><body>warm</body></html>", baseURL: nil)
 		// The page answering is the content process up: before it, the script fails or waits.
 		let deadline = Date(timeIntervalSinceNow: 90)
