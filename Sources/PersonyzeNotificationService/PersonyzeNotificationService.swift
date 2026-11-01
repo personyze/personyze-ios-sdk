@@ -15,7 +15,7 @@ import UserNotifications
 /// ```swift
 /// import PersonyzeNotificationService
 ///
-/// class NotificationService: PersonyzeNotificationService
+/// final class NotificationService: PersonyzeNotificationService, @unchecked Sendable
 /// {
 /// }
 /// ```

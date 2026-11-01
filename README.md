@@ -120,7 +120,7 @@ Service Extension) with this package's `PersonyzeNotificationService` library, i
 ```swift
 import PersonyzeNotificationService
 
-class NotificationService: PersonyzeNotificationService
+final class NotificationService: PersonyzeNotificationService, @unchecked Sendable
 {
 }
 ```
