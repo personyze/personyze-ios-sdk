@@ -52,8 +52,9 @@ import WebKit
 		return action
 	}
 
-	private func onScreen(_ view: PersonyzeActionView) -> UIWindow
-	{	let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+	private func onScreen(_ view: PersonyzeActionView) async throws -> UIWindow
+	{	try await WebKitWarmUp.ensure()
+		let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
 		window.addSubview(view)
 		window.isHidden = false
 		return window
@@ -64,9 +65,8 @@ import WebKit
 		let view = PersonyzeActionView(frame: CGRect(x: 0, y: 0, width: 320, height: 10))
 		var posted: [CGFloat] = []
 		view.onHeightChange = { posted.append($0) }
-		let window = onScreen(view)
+		let window = try await onScreen(view)
 		view.render(banner(reporter))
-		// The first page in the process waits for WebKit's content process to start.
 		try await waitUntil(seconds: 30, "the page to load")
 		{	reporter.executed == [88]
 		}
@@ -84,7 +84,7 @@ import WebKit
 	@Test func closeIsReportedAndHidesTheView() async throws
 	{	let reporter = FakeReporter()
 		let view = PersonyzeActionView(frame: CGRect(x: 0, y: 0, width: 320, height: 10))
-		let window = onScreen(view)
+		let window = try await onScreen(view)
 		view.render(banner(reporter))
 		try await waitUntil(seconds: 15)
 		{	reporter.executed == [88]
@@ -108,7 +108,7 @@ import WebKit
 			tapped.append(click)
 			return true
 		}
-		let window = onScreen(view)
+		let window = try await onScreen(view)
 		view.render(banner(reporter))
 		try await waitUntil(seconds: 15)
 		{	reporter.executed == [88]
@@ -179,6 +179,34 @@ final class FakeReporter: ActionReporter, @unchecked Sendable
 	{
 	}
 }
+
+#if os(iOS)
+/// WebKit started once, before the first action view's test: a cold simulator's first page waits
+/// for WebKit's content process to start, which on GitHub's runners took over 30 seconds more than
+/// once - and failed the first test of the suite, whichever it was, for what was WebKit's start and
+/// not the page. Given its own 90 seconds and its own name, so a failure says which it was.
+@MainActor enum WebKitWarmUp
+{	private static var done = false
+
+	static func ensure() async throws
+	{	if done
+		{	return
+		}
+		let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 10, height: 10))
+		web.loadHTMLString("<html><body>warm</body></html>", baseURL: nil)
+		// The page answering is the content process up: before it, the script fails or waits.
+		let deadline = Date(timeIntervalSinceNow: 90)
+		while (try? await web.evaluateJavaScript("document.body ? document.body.innerText : ''")) as? String != "warm"
+		{	if Date() > deadline
+			{	Issue.record("timed out after 90 s waiting for WebKit's content process to start (a cold simulator)")
+				throw CancellationError()
+			}
+			try await Task.sleep(nanoseconds: 200_000_000)
+		}
+		done = true
+	}
+}
+#endif
 
 /// Polls `condition` until it holds; records an issue naming `what` and throws when it does not in
 /// time. `what` is evaluated then, so it can show the state at the timeout.
