@@ -100,7 +100,8 @@ in the background as iOS allows.
 With the account's Apple push key uploaded in the Personyze panel (Integrations › App push), a campaign reaches
 the phone at once, even with the app closed, instead of at the app's next check. In the app's target, add the
 Push Notifications capability, and pass the device token on from the app delegate - the SDK asks iOS for it
-itself, once the user allows notifications:
+itself each time the app comes to the front, once the user allows notifications (iOS answers with the token it
+holds, and the same token again changes nothing):
 
 ```swift
 func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data)
@@ -112,6 +113,14 @@ Taps on a pushed notification go through `handleNotificationResponse` as above. 
 Personyze for the current visitor, again after a login or a logout, and takes it off when the notifications are
 turned off or the visitor is reset; once Personyze pushes to the device, the background check is rare. A push
 that does not go is still shown at the app's next check.
+
+**Checking it works.** The device registers after the app's first request to Personyze - a navigation, events or a
+refresh - since a device is registered for a visitor. `Personyze.pushStatus` (and `pushStatuses`, an `AsyncStream`)
+says where it stands: the token passed on, the visitor it is registered for, and whether Personyze pushes to it
+(the account has its key); `diagnostics()` prints the same. In the panel, Integrations › App push counts the devices
+registered, and **Send a test notification** pushes one at once - to a visitor id, or the devices that registered
+last - and says what Apple answered. A campaign's own notifications wait for the visitor's session to end, an hour
+and a half or more.
 
 iOS draws a pushed notification by itself: title, text, sound. For its picture and buttons, and for the campaign
 to count it shown before it is tapped, add a Notification Service Extension (File › New › Target › Notification

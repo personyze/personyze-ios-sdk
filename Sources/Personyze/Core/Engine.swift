@@ -104,6 +104,7 @@ final class Engine: @unchecked Sendable
 
 	let result = StateCell(PersonyzeResult.empty)
 	let visitor = StateCell(PersonyzeVisitor(userId: nil, visitorId: nil, sessionId: nil))
+	let push = StateCell(PersonyzePushStatus(token: nil, registeredVisitorId: nil, registeredAtMs: 0, pushed: false))
 
 	init
 	(	config: EngineConfig,
@@ -1136,6 +1137,7 @@ final class Engine: @unchecked Sendable
 	{	mutate { [self] in
 			if token != state.push.token
 			{	state.push.token = token
+				emitPushLocked()
 				persistSoon()
 			}
 		}
@@ -1196,6 +1198,7 @@ final class Engine: @unchecked Sendable
 					{	state.push.registered = job.signature
 						state.push.registeredAtMs = now
 						state.push.active = active
+						emitPushLocked()
 					}
 					persistSoon()
 				case .failed(let error, _):
@@ -1291,8 +1294,14 @@ final class Engine: @unchecked Sendable
 
 	// MARK: - state and output
 
+	private func emitPushLocked()
+	{	let p = state.push
+		push.set(PersonyzePushStatus(token: p.token, registeredVisitorId: p.registeredVisitorId, registeredAtMs: p.registeredAtMs, pushed: p.active))
+	}
+
 	private func emitLocked()
-	{	result.set(buildResultLocked())
+	{	emitPushLocked()
+		result.set(buildResultLocked())
 		visitor.set(
 			PersonyzeVisitor(
 				userId: state.userId?.text,
@@ -1444,6 +1453,7 @@ final class Engine: @unchecked Sendable
 			s += "cacheVersion=\(state.cacheVersion) templates: \(metadata.conditions.count) campaigns, \(metadata.actions.count) actions, \(metadata.placeholders.count) placeholders, \(metadata.missing.count) missing\n"
 			s += "pageReports=\(Engine.format(state.pageReports))\n"
 			s += "notifications=lastCheckMs=\(state.notifications.lastCheckMs) delivered=\(state.notifications.delivered.map { "\($0.visitor):\($0.messageId)" })\n"
+			s += "push=\(push.value)\n"
 			s += "throttledUntilMs=\(state.throttledUntilMs)\n"
 			s += "queue (\(pending.count)):\n"
 			for item in pending

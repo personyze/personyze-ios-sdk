@@ -758,9 +758,12 @@ import Testing
 		h.engine.setPushToken("a1b2c3")
 		await h.engine.idle()
 		#expect(pushBodies(h).isEmpty, "no visitor yet")
+		#expect(h.engine.push.value == PersonyzePushStatus(token: "a1b2c3", registeredVisitorId: nil, registeredAtMs: 0, pushed: false), "a token, not registered yet")
 		_ = await h.engine.navigate("Home", events: nil)
 		await h.engine.idle()
 		let visitor = try #require(h.engine.visitor.value.visitorId)
+		let status = h.engine.push.value
+		#expect(status.token == "a1b2c3" && status.registeredVisitorId == visitor && status.pushed && status.registeredAtMs > 0, "\(status)")
 		#expect(pushBodies(h) == [.object(["user_id": .int(Int64(visitor)), "token": .string("a1b2c3"), "platform": .string("ios"), "app_id": .string("com.shop.app"), "sandbox": .bool(true), "enabled": .bool(true)])])
 		#expect(h.transport.requests.last?.method == "PUT")
 		#expect(h.engine.backgroundCheckSeconds() == 6*3600, "pushed: the background checks are few")
@@ -775,11 +778,16 @@ import Testing
 	/// and the app goes on checking every 15 minutes.
 	@Test func withoutAKeyTheChecksStayAsTheyWere() async
 	{	let h = pushHarness(answer: #"{"push":false}"#)
-		h.engine.setPushToken("a1b2c3")
+		h.engine.setPushToken("a1b2c3d4e5f60718293a4b5c")
 		_ = await h.engine.navigate("Home", events: nil)
 		await h.engine.idle()
 		#expect(pushBodies(h).count == 1)
 		#expect(h.engine.backgroundCheckSeconds() == 15*60)
+		#expect(!h.engine.push.value.pushed, "registered, not pushed: no key")
+		#expect(h.engine.push.value.registeredVisitorId == h.engine.visitor.value.visitorId)
+		let diagnostics = h.engine.diagnostics()
+		#expect(diagnostics.contains("push=PersonyzePushStatus(token: a1b2c3d4e5… (24)"), "\(diagnostics)")
+		#expect(!diagnostics.contains("a1b2c3d4e5f60718293a4b5c"), "the whole token in diagnostics")
 	}
 
 	@Test func notificationsTurnedOffTakeTheDeviceOff() async

@@ -62,6 +62,17 @@ public final class PersonyzeClient: Sendable, ActionReporter, CustomStringConver
 	{	engine.visitor.stream()
 	}
 
+	/// Where push stands on this install: the token passed on, the visitor it is registered for,
+	/// whether Personyze pushes to it (`PersonyzePushStatus` says what each state means).
+	public var pushStatus: PersonyzePushStatus
+	{	engine.push.value
+	}
+
+	/// The push status, then each change.
+	public var pushStatuses: AsyncStream<PersonyzePushStatus>
+	{	engine.push.stream()
+	}
+
 	/// The visitor opened a screen ("document"): log it and get what to present there, in one
 	/// round trip. `events` run first, on the caller's own actor, and go in the same request,
 	/// attributed to this screen:

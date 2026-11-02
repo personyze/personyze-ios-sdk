@@ -27,6 +27,7 @@ public enum Personyze
 	private static let current = Locked<PersonyzeClient?>(nil)
 	private static let emptyResult = StateCell(PersonyzeResult.empty)
 	private static let emptyVisitor = StateCell(PersonyzeVisitor(userId: nil, visitorId: nil, sessionId: nil))
+	private static let emptyPush = StateCell(PersonyzePushStatus(token: nil, registeredVisitorId: nil, registeredAtMs: 0, pushed: false))
 
 	/// Create the client, or answer the existing one when `config` is the same. Another config
 	/// (another key, say) replaces it. Never touches the disk on this thread.
@@ -117,6 +118,16 @@ public enum Personyze
 	/// The current visitor, then each change. Subscribe after `initialize`.
 	public static var visitors: AsyncStream<PersonyzeVisitor>
 	{	client?.visitors ?? emptyVisitor.stream()
+	}
+
+	/// Where push stands on this install (`PersonyzePushStatus`).
+	public static var pushStatus: PersonyzePushStatus
+	{	client?.pushStatus ?? emptyPush.value
+	}
+
+	/// The push status, then each change. Subscribe after `initialize`.
+	public static var pushStatuses: AsyncStream<PersonyzePushStatus>
+	{	client?.pushStatuses ?? emptyPush.stream()
 	}
 
 	/// The visitor opened a screen ("document"): log it and get what to present there, in one

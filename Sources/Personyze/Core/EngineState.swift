@@ -70,6 +70,11 @@ struct PersistedPush: Codable, Sendable, Equatable
 	/// registration answered). Then the background checks are few.
 	var active = false
 
+	/// The visitor id of `registered` ("<visitor> <token>").
+	var registeredVisitorId: Int?
+	{	registered.flatMap { $0.split(separator: " ").first }.flatMap { Int($0) }
+	}
+
 	init()
 	{
 	}

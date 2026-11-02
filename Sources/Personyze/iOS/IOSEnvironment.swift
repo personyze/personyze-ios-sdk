@@ -385,20 +385,18 @@ enum AppLifecycle
 	}
 }
 
-/// Asking iOS for the device's push token, once a launch - Apple's advice, since a token may
-/// change. iOS answers the app delegate (`didRegisterForRemoteNotificationsWithDeviceToken`),
-/// which the SDK does not take: the app passes the token on. An app without the Push
+/// Asking iOS for the device's push token each time the app comes to the front. Apple asks for it
+/// at every launch, since a token may change; asking again as the app returns also gets one that
+/// failed before (no network at the launch) without waiting for the next launch - and costs
+/// nothing once iOS has it, answering with the token it holds. iOS answers the app delegate
+/// (`didRegisterForRemoteNotificationsWithDeviceToken`), which the SDK does not take: the app
+/// passes the token on, and the same token again changes nothing. An app without the Push
 /// Notifications capability is answered with an error there instead, and is checked for its
 /// notifications as before.
 @MainActor
 enum RemoteNotifications
-{	private static var asked = false
-
-	static func register()
-	{	if !asked
-		{	asked = true
-			UIApplication.shared.registerForRemoteNotifications()
-		}
+{	static func register()
+	{	UIApplication.shared.registerForRemoteNotifications()
 	}
 }
 
