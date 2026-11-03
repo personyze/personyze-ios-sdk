@@ -1,11 +1,27 @@
 # Personyze iOS SDK 2.0
 
-**Work in progress.** A rewrite of the 1.x SDK (a single `PersonyzeIosSdk.swift` dragged into an Xcode project) as
-a Swift package, following the Android SDK 2.0 decision for decision: the same wire, the same session rules, the
-same failure handling. 1.x stays available on this repository's `v1` branch.
+Personalization and A/B testing for iOS apps: tell [Personyze](https://www.personyze.com/) what the visitor does,
+get back the campaigns they match and the actions to present, render them, and receive Personyze notifications.
 
-Everything is in place and builds and tests on iOS; what is not yet proven is its behaviour in a running app - an
-action rendered on screen, a notification shown, a background send - and the live conformance test.
+A Swift package, with Swift concurrency and SwiftUI support. It replaces the 1.x SDK (a single
+`PersonyzeIosSdk.swift` dragged into an Xcode project), which stays on this repository's
+[`v1` branch](https://github.com/personyze/personyze-ios-sdk/tree/v1) - see [Upgrading from 1.x](#upgrading-from-1x).
+It works as the [Android SDK](https://github.com/personyze/personyzeandroidsdk) does: the same requests, the same
+session rules, the same failure handling. A [demo app](https://github.com/personyze/personyze-ios-sdk-demo) shows it
+at work.
+
+## Install
+
+In Xcode: **File › Add Package Dependencies…**, enter `https://github.com/personyze/personyze-ios-sdk`, and choose
+**Up to Next Major Version** from 2.0.0. Add the `Personyze` library to your app's target, and
+`PersonyzeNotificationService` to a Notification Service Extension if your app is pushed notifications
+([Pushed at once](#pushed-at-once-apples-push-service)).
+
+In a `Package.swift`:
+
+```swift
+.package(url: "https://github.com/personyze/personyze-ios-sdk", from: "2.0.0")
+```
 
 ## Use
 
